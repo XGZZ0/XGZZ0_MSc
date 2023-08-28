@@ -1,0 +1,119 @@
+---
+title: "cell type enrichment"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r - installing packages}
+install.packages("BiocManager")
+
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("EWCE") #installing EWCE packaging 
+
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("ewceData")
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load_gh("trinker/textshape") #installing textshape
+
+```
+```{r - loading packages}
+library(EWCE)
+library(ewceData)
+library(SingleCellExperiment)
+library(textshape) 
+library(readxl)
+library(ggplot2)
+```
+
+```{r - loading single cell data}
+ctd <- ewceData::ctd()
+```
+```{r - getting list of genes in genes info}
+background_genes <- as.data.frame(geneInfo$geneSymbol)
+colnames(background_genes)[1] <- paste("Name") #creates a df of just list of genes called background genes
+
+bg <- background_genes$Name
+bg <- as.list(strsplit(bg, ";"))
+bg <- unlist(bg) 
+```
+
+```{r - running enrichmnet in all modules in geneinfo}
+bg = geneInfo$geneSymbol
+modules <- unique(geneInfo$moduleColor)
+x_results_list <- list()
+x_results2 <- list() #assigns gene symbol column into bg variable? 
+
+#number of modules
+for(i in modules[1:11]){
+  print(i)
+  x <- subset(geneInfo, moduleColor == i)
+  x_genes <- x[,2]
+print(length(x_genes))
+#iterates through first 11 modules, subsets geneInfo object for each module, extracts corresponding gene symbol and prints no. of genes in each module
+
+ #Running the enrichment 
+  reps=1000
+  subCellStatus=TRUE 
+  x_results <- EWCE::bootstrap_enrichment_test(sct_data = ctd,
+                                                sctSpecies = "mouse",
+                                                genelistSpecies = "human",
+                                                hits = x_genes, 
+                                                reps = reps,
+                                                bg=bg,
+                                                annotLevel = 1)
+  x_results$results$Module <- paste(i)
+  x_results_list[[i]] <- x_results
+  x_results2[[i]] <- x_results$results
+}
+
+EWCE <- do.call(rbind, x_results_list)
+EWCE_2 <- do.call(rbind, x_results2)
+
+
+
+EWCE_2$list = paste(EWCE_2$Module)
+
+print(EWCE::ewce_plot(
+    total_res =EWCE_2 ,
+    mtc_method = "BH"
+)) 
+
+for(i in 1:nrow(EWCE_2)){
+  print(i)
+  if(EWCE_2$q[i] < 0.05){
+    EWCE_2$Significance[i] <- paste("Significant")
+  }
+  else if(EWCE_2$q[i] > 0.05){
+    EWCE_2$Significance[i] <- paste("Not significant")
+  }
+}
+EWCE_2$SD <- EWCE_2$sd_from_mean
+for(i in 1:nrow(EWCE_2)){
+  print(i)
+  if(EWCE_2$sd_from_mean[i] >0){
+    EWCE_2$SD[i] <- paste(EWCE_2$sd_from_mean[i])
+  }
+  else if(EWCE_2$sd_from_mean[i] < 0){
+    EWCE_2$SD[i] <- paste(0)
+  }
+}
+
+EWCE_2$SD <- as.numeric(EWCE_2$SD)
+
+ggplot(EWCE_2, aes(x=Module, y=CellType, color = Significance, size = SD))+ theme_bw() +
+  geom_point()+ theme(axis.text.x = element_text(angle=45, hjust=1))+ scale_color_manual(values = c("Significant" = "midnightblue","Not significant"="lightblue"))+xlab("Co-methylation modules")
+
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+

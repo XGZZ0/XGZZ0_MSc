@@ -1,0 +1,98 @@
+---
+title: "Regression with final SS"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r - loading packages}
+library(ChAMP)
+library(lumi)
+library(limma)
+```
+
+```{r - reading the csv file}
+finalSS -> myLoad$pd
+```
+
+```{r - factors to be accounted for}
+M_matrix <- beta2m(myNorm) #converts beta to m matrix 
+dim(M_matrix) #checks dimension of matrix 
+finalSS$Slide <- as.character(finalSS$Slide)
+#Samplesheet <- finalSS[,c(2,3,4,6,7,8,9,10,11)]
+Samplesheet <- as.data.frame(finalSS[,c(1,2,3,4,6,7,8,9,10,11)])
+
+sample_names <- Samplesheet$Sample_Name
+M_matrix <- M_matrix[,sample_names]
+str(Samplesheet)
+
+champ.SVD(beta=as.data.frame(myNorm), pd = Samplesheet)
+champ.SVD(beta=as.data.frame(M_matrix), pd = Samplesheet)
+```
+```{r - factor of interest is group}
+Sample_Group <- factor(Samplesheet$Sample_Group, levels=c("Control","Alzheimer"))
+```
+
+```{r - factors to take into account}
+sex <- factor(Samplesheet$Sex)
+age <- as.numeric(Samplesheet$Age)
+array <- factor(Samplesheet$Array)
+slide <- factor(Samplesheet$Slide)
+DoubleN <- as.numeric(Samplesheet$DoubleN)
+NeuNP <- as.numeric(Samplesheet$NeuNP)
+Sox10P <- as.numeric(Samplesheet$Sox10P)
+plate <-as.character(Samplesheet$Plate)
+```
+
+```{r - design matrix}
+design <- model.matrix(~0+Sample_Group+sex+age+NeuNP, data=Samplesheet)
+dim(design)
+
+```
+```{r - fitting}
+fit = lmFit(M_matrix, design)
+dim(M_matrix) # to check row and column number 
+dim(design)
+```
+```{r - checking fit of SVD w adjusting }
+mAdj.fit    <- fit$coefficients[,-c(1:2)]
+
+mAdj        <- as.matrix(M_matrix) - mAdj.fit %*% t(design[,-c(1:2)])
+
+bAdj <- m2beta(mAdj)
+
+champ.SVD(beta=as.data.frame(mAdj), pd=Samplesheet)
+
+#champ.SVD(beta=as.data.frame(bAdj), pd=Samplesheet)
+```
+```{r}
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+contMatrix <- makeContrasts("Sample_GroupAlzheimer-Sample_GroupControl", levels = design)
+fit2 <- contrasts.fit(fit, contMatrix)
+fit3 <- eBayes(fit2)
+
+summary(decideTests(fit3, adjust.method = "fdr", p.value = 0.05))
+
+
+
+####DMPs ###
+ann450k <- getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+
+ann450kSub <- ann450k[match(rownames(M_matrix),ann450k$Name),
+                      c(1:4,12:19,24:ncol(ann450k))]
+
+DMPs <- topTable(fit3, num=Inf, coef=1, genelist=ann450kSub)
+
+
+DMPs_top_fdr <- topTable(fit3, num=Inf, coef=1, genelist=ann450kSub, p.value = 0.05, adjust.method = "fdr")
+head(DMPs)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+

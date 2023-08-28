@@ -1,0 +1,147 @@
+---
+title: "Quality control of GSM3584144 AD samples in PFC"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r loading required packages}
+library(ChAMP)
+library(sva)
+library(reshape2)
+library(tidyr)
+library(ggplot2)
+library(data.table) 
+library(stringr)
+library("ggplot2")
+library("gridExtra")
+library(ggplot2)
+library(dplyr)
+library(data.table)
+library(RColorBrewer)
+library(reshape2)
+library(tidyr)
+library(ChAMPdata)
+library(minfi)
+library(stringr) 
+
+```
+
+```{r loading with minfi}
+library(ChAMP)
+myLoadminfi <- champ.load(directory = "/Users/Mona/MSc research project/research project /GSE125895_RAW",
+                          method="minfi",
+                           methValue="B",
+                           autoimpute=TRUE,
+                           filterDetP=FALSE,
+                           ProbeCutoff=0,
+                           SampleCutoff=0.1,
+                           detPcut=0.01,
+                           filterBeads=TRUE,
+                           beadCutoff=0.05,
+                           filterNoCG=TRUE,
+                           filterSNPs=TRUE,
+                           population=NULL,
+                           filterMultiHit=TRUE,
+                           filterXY=FALSE,
+                           force=FALSE,
+                           arraytype="450K")
+save(myLoadminfi, file ="myLoadminfi_GSE125895_RAW.RData")
+load("/Users/Mona/MSc research project/myLoadminfi_GSE125895_RAW.RData")
+targets <- myLoadminfi$pd
+
+RGSet <- myLoadminfi$rgSet
+
+MSet <- myLoadminfi$mSet
+
+phenoData <- pData(RGSet)
+manifest <- getManifest(RGSet)
+
+MSet <- preprocessRaw(RGSet)
+RSet <- ratioConvert(MSet, what = "both", keepCN = TRUE)
+beta <- getBeta(RSet)
+GRset <- mapToGenome(RSet)
+
+beta <- getBeta(GRset)
+M <- getM(GRset)
+CN <- getCN(GRset)
+
+sampleNames <- sampleNames(GRset)
+probeNames <- featureNames(GRset)
+pheno <- pData(GRset)
+
+gr <- granges(GRset)
+
+annotation <- getAnnotation(GRset)
+names(annotation)
+
+```
+```{r checking for outliers and bad samples}
+outQC <- minfiQC(MSet, fixOutliers = TRUE, verbose = FALSE)
+plotQC(outQC$qc) #no bad samples detected 
+
+write.csv(outQC$qc, file = "minfiQC_GSE125895.csv")
+```
+```{r Sex prediction}
+predictedSex <- getSex(GRset, cutoff = -2)$predictedSex
+head(predictedSex)
+
+
+p_sex <- as.data.frame(predictedSex)
+
+targets2 <- cbind(targets, p_sex)
+targets2 <- as.data.frame(targets2) #puts data in a way so that a comparison can be made between actual sex and predicted sex
+i <- which(targets2$predictedSex != targets2$Sex)
+
+print(rownames(myLoadminfi$pd[i,]))
+#predict the sex based on the levels of methylation 
+```
+```{r reloading with ChAMP not minfi w all the bad samples removed}
+library(ChAMP)
+myLoad <- champ.load(directory = "/Users/Mona/MSc research project/research project /GSE125895_RAWfinal",
+                     methValue="B",
+                     filterDetP=TRUE,
+                     detPcut=0.01,
+                     filterBeads=TRUE,
+                     beadCutoff=0.05,
+                     filterNoCG=TRUE,
+                     filterSNPs=TRUE,
+                     population=NULL,
+                     filterMultiHit=TRUE,
+                     filterXY=TRUE,
+                     arraytype = "450K");
+save(myLoad, file = "myLoad_GSE125895_RAWfinal2505.RData")
+names(targets)[1] <- paste("Sample_Name")
+
+samples <- which(targets$Sample_Name  != targets$Sample_Name)
+
+
+```
+```{r looking at QC images pre-normalisation}
+champ.QC(resultsDir = "./CHAMP_QCimages_pre_norm/", myLoad$beta, densityPlot = TRUE, 
+         mdsPlot = TRUE, dendrogram = TRUE, pheno = myLoad$pd$Sample_Group)
+```
+```{r normalisation and saving}
+myNorm <- champ.norm(beta=myLoad$beta,
+                     rgSet=myLoad$rgSet,
+                     mset=myLoad$mset,
+                     resultsDir="./CHAMP_Normalization_BMIQ_020920/",
+                     method="BMIQ",
+                     plotBMIQ=TRUE,
+                     arraytype="450K",
+                     cores=1)
+save(myNorm, file = "myNorm_GSE125895final2505.RData")
+```
+```{r looking at QC images post-normalisation}
+champ.QC(resultsDir = "./CHAMP_QCimages_post_norm/", myNorm, densityPlot = TRUE, 
+         mdsPlot = TRUE, dendrogram = TRUE, pheno = myLoad$pd$Sample_Group)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
